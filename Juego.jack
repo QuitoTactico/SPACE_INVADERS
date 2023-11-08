@@ -1,0 +1,668 @@
+// Esteban Vergara Giraldo               ----------------
+// Jonathan Betancur Espinoza           [ SPACE INVADERS ]           
+// Miguel Angel Cock Cano                ----------------
+
+
+// Aliens en una matriz 3 x 5   (3 filas de 5 aliens)
+// Pudimos lograr 15 aliens!
+// La nave se puede mover con WASD o con las flechas, como gustes
+
+class Juego{
+    field Array f1, f2, f3;           //arrays de booleanos sobre existencia de aliens
+    field Array xBalas, yBalas;       //arrays con coordenadas en su interior para las balas
+    field int x, y;                   //posición de referencia de aliens, es el alien inferior izquierdo
+    field int xNave;                  //posición de la nave [0,27], default = 13
+    field int puntaje;                //puntaje del juego, sube al matar aliens
+    field int frame, anim;            //parámetros auxiliares para iteración del juego (frames, animaciones)
+    field int limite;                 //indica la barrera que no pueden sobrepasar los aliens. Comienza en 16
+    field int vivos1, vivos2, vivos3; //contador de aliens vivos en cada fila, ganas si todos quedan en 0
+    field int dir;                    //dirección del desplazamiento horizontal de los aliens (0=izq|1=der)
+                                      //no me dejaba manejar condicionales con booleanos por alguna razón
+    
+    
+
+    constructor Juego new(){
+        //posiciones de referencia iniciales de los aliens
+        //es el alien inferior izquierdo
+        let x = 3;  //va de 0 a 6 mientras los aliens oscilan
+        let y = 6;  //va de 6 a 16
+
+        //posición inicial de la nave (13). Va de 0 a 27.
+        let xNave = 13;
+
+        // puntaje obtenido por matar aliens.
+        // puede subir 100, 150 o 200 puntos dependiendo
+        // de la fila del alien al que se mató.
+        let puntaje = 0;
+
+        // arrays con booleanos para verificar la existencia
+        // de los aliens de una fila (son 3 filas)
+        // la f3 está en y, la f2 en y-2 y la f1 en y-4
+        let f1 = Array.new(5);
+        let f2 = Array.new(5);
+        let f3 = Array.new(5);  //fila de enfrente
+
+
+        // Las balas son lanzadas cada 4 frames, desde la posición x en la que esté la nave (xNave).
+        // Las balas se desplazan verticalmente desde la posición 15 hasta la 1, luego desaparecen.
+        // Esa desaparición es registrada como un 0 en la coordenada Y. 
+        // Si alguna bala (alguna posición del Array xBalas) tiene un 0 en la coordenada Y, 
+        // su posición en los arrays puede ser reemplazada con una bala nueva.
+        // Luego usaremos estas coordenadas para detectar su posible colisión con algún alien.
+        let xBalas = Array.new(16); 
+        let yBalas = Array.new(16); 
+
+        let frame = 0;      // contador de frames
+        let anim = 1;       // contador de animaciones
+
+        let limite = 16;    // límite que no pueden sobrepasar los aliens
+        let vivos1 = 5;     // cantidad inicial de aliens vivos en cada fila
+        let vivos2 = 5;
+        let vivos3 = 5;
+        let dir = 0;        // dirección de movimiento inicial de los aliens
+
+        return this;
+    }
+
+    method void juego(){
+        var int i;
+
+        // rellenando los arrays de booleanos sobre existencia de aliens con "sí existe"
+        let i = 0;
+        while(i < 5){
+            let f1[i] = true;
+            let f2[i] = true;
+            let f3[i] = true;
+            let i = i + 1;
+        }
+        
+        // rellenando los arrays de balas con posiciones (X,Y) en (0,0)
+        let i = 0;
+        while(i < 16){
+            let xBalas[i] = 0;
+            let yBalas[i] = 0;
+            let i = i + 1;
+        }
+
+        // juego durante 16 bajadas de los aliens
+        // en el y = 16, los aliens tocan la nave y pierde.
+        // pero si eliminas la fila de enfrente, pueden avanzar hasta 17, 
+        // y 18 con la de la mitad. Ganas si eliminas todas las filas... Exterminio.
+        while(y < limite){
+
+            do Screen.clearScreen();
+
+            do imprimirPuntuaje();
+
+            do updateAliens();
+
+            do updateNave();
+
+            // creación de bala cada 4 frames
+            if(anim = 4){
+                do crearBala();
+            }
+
+            do updateBalas();
+
+            // revisión de colisiones.
+            do colisiones();
+
+            // se le resta 1 al Y de cada bala existente, así suben
+            do subirBalas();
+
+            // cada 20 frames , el alien baja
+            if(frame = 20){
+                let y = y + 1;
+                let frame = 0;
+            }
+
+            // cada 4 frames los aliens se mueven horizontalmente
+            // el sprite de los aliens (animación) cambia cada 2, pero eso
+            // es manejado en el área de dibujo.
+            if(anim = 4){
+                do moverAliens();
+                let anim = 0;
+            }
+
+            let frame = frame + 1;
+            let anim = anim + 1;
+
+            do verificarLimite();
+
+            // el tiempo de espera de cambio de frames (la velocidad
+            // del juego) va subiendo a medida que el juego avanza.
+            do Sys.wait(380-((y-6)*20));
+        }
+
+        do Screen.setColor(false);
+        do Screen.drawRectangle(0,0,500,16);
+
+        if(limite = 0){                 // dependiendo de si mataste a todos los aliens o no,
+            do drawGanaste();     // dibuja en pantalla un "GANASTE!"
+        }else{
+            do drawPerdiste();    // o un "GAME OVER", ambos con tu puntaje.
+        }
+        do Sys.wait(20000);             // finalmente espera 10 segundos y se acaba el juego.
+        return;
+    }
+
+    //------------------------------------- PROGRESO --------------------------------------
+
+    method void verificarLimite(){
+        if((vivos3 = 0)&(limite=16)){   // si eliminas a todos los de la fila de enfrente
+            let limite = 17;            // los aliens podrán avanzar otra fila antes de que pierdas
+        }
+        if((vivos2 = 0)&(limite=17)){   // lo mismo si exterminas la fila de la mitad
+            let limite = 18;
+        }
+        if((vivos1 = 0)&(limite=18)){   // pero si eliminas todas,
+            let limite = 0;             // básicamente ganaste.
+        }
+        return;
+    }
+
+    // si hay colisión el alien desaparece (se coloca su aliens[i] en false),
+    // y la bala también (se coloca su yBalas[i] en 0).
+    // dependiendo de la fila del alien asesinado, el puntaje subirá 100, 150 o 200 puntos.
+    method void colisiones(){
+        var int i, col;
+
+        let i = 0;
+        while(i < 16){
+            let col = -1;       //significa que no está en la columna de ningún alien
+
+            if(~(yBalas[i]=0)){
+                if(xBalas[i]=x){
+                    let col = 0;
+                }
+                if(xBalas[i]=(x+5)){
+                    let col = 1;
+                }
+                if(xBalas[i]=(x+10)){
+                    let col = 2;
+                }
+                if(xBalas[i]=(x+15)){
+                    let col = 3;
+                }
+                if(xBalas[i]=(x+20)){
+                    let col = 4;
+                }
+
+                //revisión de fila y eliminación
+                if(~(col = -1)){                            // si sí está tocando una columna...
+                    if((yBalas[i] = y)&(f3[col] = true)){   // y la fila es la 3, 2 o 1
+                        let f3[col] = false;                // eliminamos al alien (false : no existe)
+                        let yBalas[i] = 0;                  // y la bala (Y=0 : no existe).
+                        let puntaje = puntaje + 100;        // además el puntaje aumenta
+                        let vivos3 = vivos3 - 1;            // y el número de aliens restantes disminuye
+                    }
+                    if((yBalas[i] = (y-2))&(f2[col] = true)){
+                        let f2[col] = false;                  
+                        let yBalas[i] = 0;  
+                        let puntaje = puntaje + 150;
+                        let vivos2 = vivos2 - 1;
+                    }
+                    if((yBalas[i] = (y-4))&(f1[col] = true)){
+                        let f1[col] = false;                  
+                        let yBalas[i] = 0;  
+                        let puntaje = puntaje + 200;
+                        let vivos1 = vivos1 - 1;
+                    }
+                }
+            }
+            let i = i + 1;
+        }
+
+        return;
+    }
+
+    method void imprimirPuntuaje(){
+        do Output.moveCursor(0,25);
+        do Output.printString("Puntaje: ");
+        do Output.printInt(puntaje);
+        return;
+    }
+
+    //-------------------------------------- ALIENS ---------------------------------------
+
+    method void moverAliens(){
+        // dir es dirección, 0 = izq | 1 = der
+        //aquí se mueven horizontalmente los aliens
+
+        if(dir=0){              //si los aliens se mueven a la izquierda
+            if(~(x=0)){         //y no han tocado el borde (0)
+                let x = x - 1;  //se moverán más a la izquierda.
+            }else{              //de lo contrario
+                let dir = 1;    //comenzarán a moverse a la derecha
+                let x = x + 1;  
+            }
+        }else{                  //si los aliens se mueven a la derecha
+            if(~(x=6)){         //y no han tocado el borde (6)
+                let x = x + 1;  //se moverán más a la derecha.
+            }else{              //de lo contrario
+                let dir = 0;    //comenzarán a moverse a la izquierda
+                let x = x - 1;  
+            }
+        }
+        return;
+    }
+
+    method void updateAliens(){
+        var int i, sprite, xAux, yAuxf1, yAuxf2, yAuxf3;
+        let i = 0;
+
+        // según el conteo de animación, se asigna un sprite para ser dibujado
+        if ( (anim=1)|(anim=2) ) {
+            let sprite = 1;
+        }else{                      //anim = 3 | anim = 4
+            let sprite = 2;
+        }
+
+        //las coordenadas auxiliares son cálculos necesarios para dibujar los
+        // aliens donde se debe, según la cuadrícula creada. 
+        //Antes mandábamos los parámetros y se calculaba a la hora de
+        // dibujar, pero se resultaba calculando lo mismo muchas veces.
+        //Para optimizar procesos, guardamos los resultados en variables auxiliares.
+        //Estas son para la posición vertical de las filas de aliens.
+        let yAuxf1 = ((y-4)*512);
+        let yAuxf2 = ((y-2)*512);
+        let yAuxf3 = (y*512);
+
+        // revisa a los aliens por fila, los que existan los dibuja según las coordenadas
+        while(i < 5){
+
+            //Variable auxiliar para la posición horizontal de las columnas de aliens.
+            let xAux = (i*5) + x;
+
+            if(f1[i] = true){
+                do Juego.drawAlien(xAux, yAuxf1, sprite);
+            }
+            if(f2[i] = true){
+                do Juego.drawAlien(xAux, yAuxf2, sprite);
+            }
+            if(f3[i] = true){
+                do Juego.drawAlien(xAux, yAuxf3, sprite);
+            }
+            let i = i + 1;
+        }
+        return;
+    }
+
+    function void drawAlien(int x, int y, int sprite) {
+        var int memAddress; 
+                    //   screen    vertical    horizontal
+        let memAddress = 16386  +  y  +  x;   //desde donde comienza el dibujo
+
+        // dependiendo del contador de animación, dibuja un sprite u otro
+        if (sprite = 1) {
+            do Memory.poke(memAddress -224, 2064);
+            do Memory.poke(memAddress -192, 1056);
+            do Memory.poke(memAddress -160, 4080);
+            do Memory.poke(memAddress -128, 7128);
+            do Memory.poke(memAddress -96,  16380);
+            do Memory.poke(memAddress -64,  12276);
+            do Memory.poke(memAddress -32,  10260);
+            do Memory.poke(memAddress, 1632);
+        }else{  // sprite = 2
+            do Memory.poke(memAddress -224, 2064);
+            do Memory.poke(memAddress -192, 9252);
+            do Memory.poke(memAddress -160, 12276);
+            do Memory.poke(memAddress -128, 15324);
+            do Memory.poke(memAddress -96,  16380);
+            do Memory.poke(memAddress -64,  8184);
+            do Memory.poke(memAddress -32,  2064);
+            do Memory.poke(memAddress, 4104);
+        }
+        return;
+    }
+
+    //--------------------------------------- NAVE ----------------------------------------
+
+    // nave pos 0-27, 13 es la mitad, comienza allí por default
+    method void updateNave(){
+        var int keyNave;
+        // se guarda el ASCII de la tecla que se está presionando
+        let keyNave = Keyboard.keyPressed();
+
+        //            leftKey           A
+        if((keyNave = 130) | (keyNave = 65)){    
+            if(~(xNave = 0)){
+                let xNave = xNave - 1;      //izquierda
+            }else{
+                let xNave = 27;             //si está en el borde, aparece a la derecha
+            }
+        }
+
+        //           rightKey           D
+        if((keyNave = 132) | (keyNave = 68)){
+            if(~(xNave = 27)){
+                let xNave = xNave + 1;      //derecha
+            }else{
+                let xNave = 0;              //si está en el borde, aparece a la izquierda
+            }
+        }
+
+        // si no se apretó ninguna tecla, no hay actualización
+        // luego, se dibuja la nave
+        do Juego.drawNave(xNave);
+        return;
+    }
+
+    function void drawNave(int x) {
+        var int memAddress; 
+        //               screen   horizontal
+        let memAddress = 24482 +  x;   //desde donde comienza el dibujo
+
+        do Memory.poke(memAddress -224, 384);
+        do Memory.poke(memAddress -192, 384);
+        do Memory.poke(memAddress -160, 4080);
+        do Memory.poke(memAddress -128, 31710);
+        do Memory.poke(memAddress -96,  5064);
+        do Memory.poke(memAddress -64,  8184);
+        do Memory.poke(memAddress -32,  3504);
+        do Memory.poke(memAddress, 12684);
+
+        return;
+    }
+
+    //--------------------------------------- BALAS ---------------------------------------
+
+    method void crearBala(){
+        var int i;
+        let i = 0;
+        while(i < 16){
+            if(yBalas[i]=0){            // se busca una posición de bala sin usar (Y = 0)
+                let yBalas[i] = 15;     // se le asigna Y = 15 (recordar que va de 15 a 1)
+                let xBalas[i] = xNave;  // su X será el xNave de ese momento, y no se cambiará.
+                let i = 16;             // nos salimos del ciclo manualmente
+            }
+            let i = i + 1;
+        }
+        return;
+    }
+
+    // método para subir las balas restándole 1 a su yBalas[i]
+    method void subirBalas(){
+        var int i;
+        let i = 0;
+        while(i < 16){
+            if(~(yBalas[i] = 0)){               //sólo se le resta si la bala existe
+                let yBalas[i] = yBalas[i] - 1;
+            }
+            let i = i + 1;
+        }
+        return;
+    }
+
+    /**
+    Vida de una bala:
+        se crea
+        (inicio ciclo)
+            se dibuja
+            se revisa colisión
+            se borra existencia
+            se resta 1 a Y, la bala sube
+        (continúa hasta que...)
+        llega hasta Y = 0, desaparece
+        es reemplazada con otra bala */
+    method void updateBalas(){
+        var int i;
+
+        // Para las 16 posibles balas, mientras la bala no esté desaparecida
+        // o sea inexistente (denotado con un 0 en su coordenada Y)
+        // será dibujada.
+        // Luego, también se actualizará su posición
+        let i = 0;
+        while(i<16){
+            if(~(yBalas[i] = 0)){
+                do Juego.drawBala(xBalas[i], yBalas[i]);
+            }
+            let i = i + 1;
+        }
+        return;
+    }
+
+    function void drawBala(int x, int y){
+        var int memAddress;
+        let memAddress = 16418  +  (y*512)  +  x;
+        do Memory.poke(memAddress, 384);
+        do Memory.poke(memAddress +32, 576);
+        do Memory.poke(memAddress +64, 832);
+        do Memory.poke(memAddress +96, 832);
+        do Memory.poke(memAddress +128, 832);
+        do Memory.poke(memAddress +160, 960);
+        do Memory.poke(memAddress +192, 960);
+        return;
+    }
+    
+    //-------------------------------------- ENDGAME --------------------------------------
+
+    method void drawGanaste(){
+        var int memAddress; 
+        let memAddress = 16384+2446;
+
+        do Output.moveCursor(10,25);
+        do Output.printString(" GANASTE!!!");
+
+        do Output.moveCursor(15,25);
+        do Output.printString("Puntaje: ");
+        do Output.printInt(puntaje);
+
+
+        // column 0
+        do Memory.poke(memAddress +160, 3);
+        do Memory.poke(memAddress +192, 7);
+        do Memory.poke(memAddress +224, 13);
+        do Memory.poke(memAddress +256, 21);
+        do Memory.poke(memAddress +288, 13);
+        do Memory.poke(memAddress +320, 126);
+        do Memory.poke(memAddress +352, 378);
+        do Memory.poke(memAddress +384, -7722);
+        do Memory.poke(memAddress +416, 2964);
+        do Memory.poke(memAddress +448, -1004);
+        do Memory.poke(memAddress +480, 20);
+        do Memory.poke(memAddress +512, 28);
+        do Memory.poke(memAddress +544, 6168);
+        do Memory.poke(memAddress +576, 3096);
+        do Memory.poke(memAddress +608, 19480);
+        do Memory.poke(memAddress +640, 19480);
+        do Memory.poke(memAddress +672, 19480);
+        do Memory.poke(memAddress +704, -1000);
+        do Memory.poke(memAddress +736, 6200);
+        do Memory.poke(memAddress +768, 48);
+        do Memory.poke(memAddress +800, 368);
+        do Memory.poke(memAddress +832, 752);
+        do Memory.poke(memAddress +864, -16448);
+        do Memory.poke(memAddress +896, -2048);
+        // column 1
+        do Memory.poke(memAddress +1, 128);
+        do Memory.poke(memAddress +33, 192);
+        do Memory.poke(memAddress +65, 192);
+        do Memory.poke(memAddress +97, 192);
+        do Memory.poke(memAddress +129, 224);
+        do Memory.poke(memAddress +161, 224);
+        do Memory.poke(memAddress +193, 480);
+        do Memory.poke(memAddress +225, 496);
+        do Memory.poke(memAddress +257, 496);
+        do Memory.poke(memAddress +289, 952);
+        do Memory.poke(memAddress +321, 684);
+        do Memory.poke(memAddress +353, 1975);
+        do Memory.poke(memAddress +385, 3772);
+        do Memory.poke(memAddress +417, -250);
+        do Memory.poke(memAddress +449, -4095);
+        do Memory.poke(memAddress +513, ~32767);
+        do Memory.poke(memAddress +545, -13116);
+        do Memory.poke(memAddress +577, -13116);
+        do Memory.poke(memAddress +609, -13306);
+        do Memory.poke(memAddress +641, 24166);
+        do Memory.poke(memAddress +673, 30311);
+        do Memory.poke(memAddress +705, 14131);
+        do Memory.poke(memAddress +737, 13105);
+        do Memory.poke(memAddress +865, 767);
+        do Memory.poke(memAddress +897, -8740);
+        do Memory.poke(memAddress +929, 6687);
+        // column 2
+        do Memory.poke(memAddress +162, 3072);
+        do Memory.poke(memAddress +194, 3584);
+        do Memory.poke(memAddress +226, 2816);
+        do Memory.poke(memAddress +258, 3968);
+        do Memory.poke(memAddress +290, 896);
+        do Memory.poke(memAddress +322, 1952);
+        do Memory.poke(memAddress +354, 2000);
+        do Memory.poke(memAddress +386, 828);
+        do Memory.poke(memAddress +418, 991);
+        do Memory.poke(memAddress +450, 703);
+        do Memory.poke(memAddress +482, 384);
+        do Memory.poke(memAddress +514, 780);
+        do Memory.poke(memAddress +546, 910);
+        do Memory.poke(memAddress +578, 390);
+        do Memory.poke(memAddress +610, 454);
+        do Memory.poke(memAddress +642, 450);
+        do Memory.poke(memAddress +674, 448);
+        do Memory.poke(memAddress +706, 451);
+        do Memory.poke(memAddress +738, 195);
+        do Memory.poke(memAddress +770, 224);
+        do Memory.poke(memAddress +802, 48);
+        do Memory.poke(memAddress +834, 60);
+        do Memory.poke(memAddress +866, 6);
+        return;
+    }
+
+    method void drawPerdiste(){
+        var int memAddress; 
+        let memAddress = 16384+2446;
+
+        do Output.moveCursor(10,25);        
+        do Output.printString("PERDISTE...");
+
+        do Output.moveCursor(15,25);
+        do Output.printString("Puntaje: ");
+        do Output.printInt(puntaje);
+
+        // column 0
+        do Memory.poke(memAddress, 3774);
+        do Memory.poke(memAddress +32, 4774);
+        do Memory.poke(memAddress +64, 6822);
+        do Memory.poke(memAddress +96, -12610);
+        do Memory.poke(memAddress +128, 17046);
+        do Memory.poke(memAddress +160, -15690);
+        do Memory.poke(memAddress +192, ~32767);
+        do Memory.poke(memAddress +224, 8191);
+        do Memory.poke(memAddress +320, 4032);
+        do Memory.poke(memAddress +352, -8992);
+        do Memory.poke(memAddress +384, -17312);
+        do Memory.poke(memAddress +416, 3168);
+        do Memory.poke(memAddress +448, 3104);
+        do Memory.poke(memAddress +480, 3104);
+        do Memory.poke(memAddress +512, 1568);
+        do Memory.poke(memAddress +544, 1632);
+        do Memory.poke(memAddress +576, 1632);
+        do Memory.poke(memAddress +608, 1760);
+        do Memory.poke(memAddress +640, 1984);
+        do Memory.poke(memAddress +672, 1536);
+        do Memory.poke(memAddress +704, 1744);
+        do Memory.poke(memAddress +736, 3612);
+        do Memory.poke(memAddress +768, 3078);
+        do Memory.poke(memAddress +800, 15362);
+        do Memory.poke(memAddress +832, -2046);
+        do Memory.poke(memAddress +864, 6);
+        do Memory.poke(memAddress +896, 24);
+        do Memory.poke(memAddress +928, -16704);
+        // column 1
+        do Memory.poke(memAddress +65, 51);
+        do Memory.poke(memAddress +97, 78);
+        do Memory.poke(memAddress +129, 68);
+        do Memory.poke(memAddress +161, 24608);
+        do Memory.poke(memAddress +193, -4079);
+        do Memory.poke(memAddress +225, -8183);
+        do Memory.poke(memAddress +257, 9);
+        do Memory.poke(memAddress +289, 9);
+        do Memory.poke(memAddress +321, 9);
+        do Memory.poke(memAddress +353, 1949);
+        do Memory.poke(memAddress +385, 3319);
+        do Memory.poke(memAddress +417, 2048);
+        do Memory.poke(memAddress +449, 3072);
+        do Memory.poke(memAddress +481, 1024);
+        do Memory.poke(memAddress +513, 1024);
+        do Memory.poke(memAddress +545, 1536);
+        do Memory.poke(memAddress +577, 512);
+        do Memory.poke(memAddress +609, 574);
+        do Memory.poke(memAddress +641, 569);
+        do Memory.poke(memAddress +673, 15897);
+        do Memory.poke(memAddress +705, -15847);
+        do Memory.poke(memAddress +737, -32231);
+        do Memory.poke(memAddress +769, 817);
+        do Memory.poke(memAddress +801, 497);
+        do Memory.poke(memAddress +833, 16385);
+        do Memory.poke(memAddress +865, 24576);
+        do Memory.poke(memAddress +897, 7032);
+        do Memory.poke(memAddress +929, 13);
+        // column 2
+        do Memory.poke(memAddress +2, 32);
+        do Memory.poke(memAddress +34, 48);
+        do Memory.poke(memAddress +66, 48);
+        do Memory.poke(memAddress +98, 48);
+        do Memory.poke(memAddress +130, 48);
+        do Memory.poke(memAddress +162, 48);
+        do Memory.poke(memAddress +194, 51);
+        do Memory.poke(memAddress +226, 63);
+        do Memory.poke(memAddress +258, 510);
+        do Memory.poke(memAddress +290, 4088);
+        do Memory.poke(memAddress +322, 3608);
+        do Memory.poke(memAddress +354, 24);
+        do Memory.poke(memAddress +386, 24);
+        do Memory.poke(memAddress +418, 24);
+        do Memory.poke(memAddress +450, 24);
+        do Memory.poke(memAddress +482, 28);
+        do Memory.poke(memAddress +514, 28);
+        do Memory.poke(memAddress +546, 28);
+        do Memory.poke(memAddress +578, 28);
+        do Memory.poke(memAddress +610, 12);
+        do Memory.poke(memAddress +642, 12);
+        do Memory.poke(memAddress +674, 12);
+        do Memory.poke(memAddress +706, 12);
+        do Memory.poke(memAddress +738, 13);
+        do Memory.poke(memAddress +770, 14);
+        do Memory.poke(memAddress +802, 14);
+        do Memory.poke(memAddress +834, 1);
+        return;
+    }
+
+}
+
+/**----------------------------------------------------------------------------------------
+                PROJECT DEDICATED TO AYANAMI REI
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣠⡤⠤⠤⠤⢤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠤⠖⠊⠉⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠒⠦⢄⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡠⠖⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠀⠈⠑⠦⣀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠴⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠀⠀⠀ ⠈⠑⢦⡀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡴⣉⡤⠖⠊⡏⢉⠟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢫⠉⢱⠦⣄⡀⠙⢦⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⢠⠏⡞⠁⠀⣠⢞⡵⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⡜⣇⠀⠙⢆⠈⢧⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⢠⠋⠀⢧⡠⣾⡵⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⢞⣧⠀⢸⠂⠀⣧⠀
+⠀⠀⠀⠀⠀⠀⠀⡟⠀⠀⠀⠙⠉⠀⠀⠀⠀⠀⠀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡇⠀⠀⠀⠀⠀⠀⠈⠛⠒⠋⠀ ⠀⢸⠀
+⠀⠀⠀⠀⠀⠀⢸⠁⠀⠀⠀⠀⢠⠄⠀⠀⠀⠀⢠⢷⠀⠀⠀⠀⠀⠀⠀⠀⡄⠀⣸⣇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ⠀⢨⠀
+⠀⠀⠀⠀⠀⠀⢸⠀⠀⠀⠀⠀⡆⠀⠀⢀⠀⠀⢸⠈⢇⠀⢰⠀⠀⠀⠀⠀⡇⢠⠃⢻⠀⢀⡔⠀⠀⠀⠀⠀⠀⠀ ⠀⠀ ⡇⠀
+⠀⠀⠀⠀⠀⠀⠈⡆⠀⠀⠀⠀⡇⠀⠀⠈⡵⠦⡼⠶⢾⣷⣸⣧⠀⠀⠀⣸⣧⣯⡶⣾⡴⡏⢀⣄⠀⠀⠀⠀⠀⠀⠀ ⡇⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⢧⠀⠀⠀⠀⡇⠀⠀⡼⠁⠀⣀⣀⡀⠀⠉⠉⢦⠀⢠⠋⠉⠁⠀⣉⣸⣗⣉⡈⠳⣄⠀⠀⠀⠀ ⠀⡇⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠘⣴⡀⠀⠀⢃⣠⠞⣿⡷⡿⠛⣿⣿⣿⢶⡄⠈⠳⠋⠀⣰⢾⠛⢻⣿⣿⡿⣿⡈⡟⠂  ⠀⡇⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⣧⠀⠀⠈⠁⠀⠸⡇⢿⣽⣿⣿⣿⡇⠁⠀⠀⠀⠀⠀⢿⡵⣿⣿⣯⡇⠏⡹⠁⠀⠀ ⢀⡇⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⡆⠀⠀⠀⠀⠀⠹⣌⠻⠿⠿⠋⠀⠀⠀⠀⠀⠀⠀⠀⠈⠻⠿⠿⠛⠀⣰⠃⠀⠀⠀⣠⠃⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⢆⢀⡀⠀⠀⠀⠈⠳⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⡃⠀⠀⢀⡜⠁⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠙⠑⢆⡀⠀⠈⠻⡍⠀⠀⠀⠀⠀⠒⠒⠂⠀⠀⠀⠀⠀⣀⣤⣟⠁⣠⠔⠃⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠢⣄⣿⠛⣻⣶⣤⣤⣤⣀⣠⣤⢤⣤⣴⡶⠫⠿⣿⡚⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡴⢻⣶⡄⢰⢳⠃⢀⣷⣿⠦⢯⣿⡗⠀⢧⠹⡄⠀⣤⣽⢦⡀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣷⣶⣶⣿⣄⣾⠏⠀⠈⠑⢦⡀⣤⠞⠉⠀⠈⠱⣧⢠⣼⣿⣦⣽⣦⡀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⠔⣻⣿⣿⣿⡿⠟⢹⣿⡄⠀⠀⠀⣾⣿⣿⡀⠀⠀⠀⣸⣿⣿⢿⣿⣿⣿⣿⣿⢦⡀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⣰⣯⡟⠓⢍⠻⡿⠏⠁⠀⢸⢿⡟⠲⠶⠚⢱⠋⢲⠑⠒⠒⠊⣟⡩⢾⡇⠙⢿⣿⡿⢋⡼⡄⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⡼⠁⠀⠙⢤⡀⡻⠁⠀⠀⠀⡌⠶⣷⡶⠶⢦⠘⣗⠏⢀⠒⢒⣒⡻⢸⡇⠀  ⠀⢻⡕⠉⠀ ⠀⠳⡀⠀⠀
+⠀⠀⠀⠀⠀⠀⢰⡀⠀⠀⠀⣰⠋⠁⠀⠀⠀⠀⣧⠀⠀⠉⠉⠉⠀ ⢸ ⠈⠉⠉⠀ ⠀⣠⡇⠀⠀  ⠀⠙⢦⣀⣀⡴⠃⠀
+⠀⠀⠀⠀⠀⠀⠀⠑⠒⠉⠀⠀⠀⠀⠀⠀⠀⠀⡏⠳⣄⠀⠀⠀⠀  ⡇⠀⠀ ⠀⠀⡠⠚⠁⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠀⠀⠀⠀⣇⡀⠈⠑⠢⣄⡀⠈⠁⠀⣀⠴⠋⠀⣀⣠⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠀⠀⠀⣯⣽⠀⠀⠀⠀⠉⣷⠒⡋⠀⠀⠀ ⠀⢫⣵⡇⠀⠀⠀⠀⠀⠀⠀La creatura⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠀⠀⡇⢰⠤⡄⠀⠀⠀⡇⠀⣇⠀⠀⠀ ⡤⢦⠀⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠀⠀⠧⠞⠀⠹⣄⠀⢸⠀⠀⢹⣀⣠⠞⠀⠘⠦⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠀⢀⠀⠀⣀⣀⣉⡟⠀⠀ ⡏⠀⠀⠀ ⣀⡀⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⢠⠎⠉⠉⠉⠀⠈⡇⠀⠀ ⡏⠉⠉⠉⠁⠉⢇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⢨⡄⠀⠀⠀⣆⣠⠇⠀⠀ ⣧⠀⣠⠀⠀⠀ ⢸⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀⠈⠳⠤⠤⠶⠛⠁⠀⠀⠀ ⠈⠻⠿⣦⣤⡤⠞*/

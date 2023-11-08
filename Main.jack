@@ -1,0 +1,25 @@
+// Esteban Vergara Giraldo               ----------------
+// Jonathan Betancur Espinoza           [ SPACE INVADERS ]           
+// Miguel Angel Cock Cano                ----------------
+
+// Archivo auxiliar ejecutador, creado únicamente para que el juego inicialice sus 
+// atributos y variables y así luego ejecutar el Space Invaders.
+
+// Debatimos sobre si correr el ciclo del juego aquí, pero acordamos que al hacerlo, 
+// podría perderse legibilidad (sería spaguetti), y deberían crearse métodos extra
+// para aumentar ciertos contadores. 
+
+// Decidimos dejarlo así para no aumentar la complejidad del proyecto, pero, aunque no
+// habría cambio en la optimización de memoria ni procesos, la mejor práctica sería poner 
+// aquí el ciclo y usar los métodos del objeto Juego que creamos, desde acá, exteriormente.
+
+class Main{
+    function void main(){
+        var Juego juego;
+        let juego = Juego.new(); 
+        do juego.juego();
+        return;
+    }
+}
+
+
